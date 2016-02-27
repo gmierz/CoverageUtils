@@ -39,25 +39,26 @@ this.CoverageCollector = function (prefix) {
 
 CoverageCollector.prototype._getLinesCovered = function () {
   let coveredLines = {};
+  let methodNames = {};
   let currentCoverage = {};
+  let temp = 0;
   this._scripts.forEach(s => {
     let scriptName = s.url;
     let cov = s.getOffsetsCoverage();
-    let methodName = s.displayName;
+     
     if (!cov) {
       return;
-    }
-    
+    }  
     cov.forEach(covered => {
       let {lineNumber, columnNumber, offset, count} = covered;
       if (!count) {
         return;
       }
       
-      
       if (!currentCoverage[scriptName]) {
         currentCoverage[scriptName] = {};
       }
+      
       if (!this._allCoverage[scriptName]) {
         this._allCoverage[scriptName] = {};
       }
@@ -69,10 +70,7 @@ CoverageCollector.prototype._getLinesCovered = function () {
         currentCoverage[scriptName][key] += count;
       }
       
-    });
-    if(!currentCoverage[scriptName][methodName]){
-          currentCoverage[scriptName][methodName] = s.displayName;
-    }
+    });  
   });
 
   // Covered lines are determined by comparing every offset mentioned as of the
@@ -93,14 +91,50 @@ CoverageCollector.prototype._getLinesCovered = function () {
         this._allCoverage[scriptName][key] = currentCoverage[scriptName][key];
       }
     }
-    for(let methodName in currentCoverage[scriptName]){
-        if (!coveredLines[scriptName][methodName]){
-            coveredLines[scriptName][methodName] = "currentCoverage[scriptName][methodName]";
-        }
-    }
   }
 
   return coveredLines;
+}
+
+
+CoverageCollector.prototype._recordMethods = function() {
+    let methodNames = {};
+    let temp = 0;
+    this._scripts.forEach(s=> {
+        let method = s.displayName;
+        let scriptName = s.url;
+        let cov = s.getOffsetsCoverage();
+        if (!cov) {
+            return;
+        }
+        if(!method){
+            return;
+        }
+        
+        if(!methodNames[scriptName]){
+            methodNames[scriptName] = new Set();
+        }
+        
+        cov.forEach(covered => {
+            
+              let {lineNumber, columnNumber, offset, count} = covered;
+              if (!count) {
+                return;
+              }
+
+              if (!this._allCoverage[scriptName]) {
+                this._allCoverage[scriptName] = {};
+              }
+
+              let key = [lineNumber, s.displayName].join('#');
+              if (!methodNames[scriptName][key]) {
+                methodNames[scriptName][key] = key;
+              }
+        });
+        
+    });
+    
+    return methodNames;
 }
 
 
@@ -113,6 +147,7 @@ CoverageCollector.prototype.recordTestCoverage = function (testName) {
   dump("Collecting coverage for: " + testName + "\n");
   let rawLines = this._getLinesCovered(testName);
   let result = [];
+  let methods = this._recordMethods(testName);
   for (let scriptName in rawLines) {
     let rec = {
       testUrl: testName,
@@ -120,16 +155,34 @@ CoverageCollector.prototype.recordTestCoverage = function (testName) {
       method: [],
       covered: []
     };
-    for (let methodName in rawLines[scriptName]){
-        if(!methodName.contains('#')){
-            rec.method.push(methodName);
-        }
-    }
     
-    for (let line of rawLines[scriptName]) {
-        if(!isNaN(line)){  
-            rec.covered.push(line);
+    let finalRec = {
+        methodName: "null",
+        cov: []
+    }
+    let covering = [];
+    let methodTest = null;
+    for (let methodKey in methods[scriptName]){
+        let [lineNumber, methodJoin] = methodKey.split("#");
+        if(!methodTest){
+            methodTest = methodJoin;
         }
+        else if(methodTest !== methodJoin){
+            let methodRec = { methodName: methodTest, cov: covering };
+            rec.method.push(methodRec);
+            covering = [];
+            methodTest = methodJoin;
+        }
+        covering.push(parseInt(lineNumber, 10));
+        finalRec.cov = covering;
+        finalRec.methodName = methodJoin;
+    }
+    if(finalRec.methodName != "null"){
+        rec.method.push(finalRec);
+    }
+      
+    for (let line of rawLines[scriptName]) {
+        rec.covered.push(line);
     }
     result.push(rec);
   }
