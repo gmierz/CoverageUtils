@@ -39,37 +39,35 @@ this.CoverageCollector = function (prefix) {
 
 CoverageCollector.prototype._getLinesCovered = function () {
   let coveredLines = {};
-  let methodNames = {};
   let currentCoverage = {};
-  let temp = 0;
   this._scripts.forEach(s => {
     let scriptName = s.url;
     let cov = s.getOffsetsCoverage();
-     
     if (!cov) {
       return;
-    }  
+    }
+
     cov.forEach(covered => {
       let {lineNumber, columnNumber, offset, count} = covered;
       if (!count) {
         return;
       }
-      
+
       if (!currentCoverage[scriptName]) {
         currentCoverage[scriptName] = {};
       }
-      
       if (!this._allCoverage[scriptName]) {
         this._allCoverage[scriptName] = {};
       }
-      
+
       let key = [lineNumber, columnNumber, offset].join('#');
       if (!currentCoverage[scriptName][key]) {
         currentCoverage[scriptName][key] = count;
       } else {
         currentCoverage[scriptName][key] += count;
       }
-    });  
+    });
+
   });
 
   // Covered lines are determined by comparing every offset mentioned as of the
@@ -78,7 +76,10 @@ CoverageCollector.prototype._getLinesCovered = function () {
   // any offset on a particular line, that line must have been covered.
   for (let scriptName in currentCoverage) {
     for (let key in currentCoverage[scriptName]) {
-      if (!this._allCoverage[scriptName] || !this._allCoverage[scriptName][key] || (this._allCoverage[scriptName][key] < currentCoverage[scriptName][key])) {
+      if (!this._allCoverage[scriptName] ||
+          !this._allCoverage[scriptName][key] ||
+          (this._allCoverage[scriptName][key] <
+           currentCoverage[scriptName][key])) {
         let [lineNumber, colNumber, offset] = key.split('#');
         if (!coveredLines[scriptName]) {
           coveredLines[scriptName] = new Set();
@@ -93,24 +94,65 @@ CoverageCollector.prototype._getLinesCovered = function () {
 }
 
 CoverageCollector.prototype._getUncoveredLines = function() {
-    let uncoveredLines = {};
-    this._scripts.forEach(s => {
-      let cov = s.getOffsetsCoverage();
-      let scriptName = s.url;
-      if(!cov){
-        return;  
-      }
-      if(!uncoveredLines[scriptName]){
-          uncoveredLines[scriptName] = new Set();
-      }
-        
-      cov.forEach(covered => {
-        let {lineNumber, columnnumber, offset, count} = covered; 
-        if(!count){        
-          uncoveredLines[scriptName][lineNumber] = parseInt(lineNumber, 10);
+  let uncoveredLines = {};
+  let currentUncovered = {};
+  let tempCovered = {};
+  this._scripts.forEach(s => {
+    let cov = s.getOffsetsCoverage();
+    let scriptName = s.url;
+    if (!cov){
+      return;  
+    }
+    if(!currentUncovered[scriptName]){
+      currentUncovered[scriptName] = new Set();
+    }
+    if (!this._allCoverage[scriptName]) {
+      this._allCoverage[scriptName] = {};
+    }
+    if(!tempCovered[scriptName]){
+        tempCovered[scriptName] = new Set();
+    }
+      
+    cov.forEach(covered => {
+      let {lineNumber, columnnumber, offset, count} = covered; 
+      let key = [lineNumber, columnnumber, offset].join('#');
+      if (!count){
+        if(!currentUncovered[scriptName][lineNumber]){
+          //If we haven't covered this ine before
+          if(!tempCovered[scriptName][lineNumber]){ 
+            currentUncovered[scriptName][lineNumber] = count;
+          }
         }
-      });
+      }
+      else{
+        //tempCovered is obtained here to determine if a line was covered in a previous run
+        if(!tempCovered[scriptName][lineNumber]){
+          tempCovered[scriptName][lineNumber] = count;
+        }
+        else{
+          tempCovered[scriptName][lineNumber] += count;
+        }
+        //If the current line is counted and in the currently uncovered lines
+        if(currentUncovered[scriptName][lineNumber] < currentUncovered[scriptName][lineNumber]+count){
+          currentUncovered[scriptName][lineNumber] += count;    
+        }
+      }
+    });
   });
+  //Gather all lines uncovered based on whether they were counted or not.
+  for (let scriptName in currentUncovered){
+    for (let key in currentUncovered[scriptName]){
+      if(currentUncovered[scriptName][key] === 0){
+        if(!uncoveredLines[scriptName]){
+          uncoveredLines[scriptName] = new Set();
+        }
+        if(!uncoveredLines[scriptName][key]){
+          uncoveredLines[scriptName][key] = key;
+        }
+      }
+    }                                             
+  }
+    
   return uncoveredLines;
 }
 
@@ -121,12 +163,11 @@ CoverageCollector.prototype._getMethodNames = function() {
       let method = s.displayName;
       let scriptName = s.url;
       let cov = s.getOffsetsCoverage();
-        
       if (!cov) {
         return;
       }
       if (!method){
-        return;
+        method = "undefined_" + temp++; 
       }
       if (!methodNames[scriptName]){
         methodNames[scriptName] = new Set();
@@ -143,16 +184,15 @@ CoverageCollector.prototype._getMethodNames = function() {
           this._allCoverage[scriptName] = {};
         }
         //Join the method's name with the line number
-        let key = [lineNumber, s.displayName].join('#');
+        let key = [lineNumber, method].join('#');
         if (!methodNames[scriptName][key]) {
           methodNames[scriptName][key] = key;
         }
       });
     });
-    
+    temp = 0;
     return methodNames;
 }
-
 
 /**
  * Records lines covered since the last time coverage was recorded,
@@ -184,33 +224,34 @@ CoverageCollector.prototype.recordTestCoverage = function (testName) {
     let covering = [];
     let methodTest = null;
     for (let methodKey in methods[scriptName]){                             
-        let [lineNumber, methodJoin] = methodKey.split("#");
-        if (!methodTest){                        
-            methodTest = methodJoin;
-        }
-        else if (methodTest !== methodJoin){   
-            //If we have a new method name, push the current record
-            let methodRec = { methodName: methodTest, cov: covering };
-            rec.method.push(methodRec);
-            covering = [];
-            methodTest = methodJoin;
-        }
-        //Add the current line to the lines this method covers
-        covering.push(parseInt(lineNumber, 10));
-        //Record the current coverage just in case we are at the last method
-        finalRec.cov = covering;
-        finalRec.methodName = methodJoin;
+      let [lineNumber, methodJoin] = methodKey.split("#");
+      //Get a method name
+      if (!methodTest){                        
+        methodTest = methodJoin;
+      }
+      else if (methodTest !== methodJoin){   
+        //If we have a new method name, push the current record
+        let methodRec = { methodName: methodTest, cov: covering };
+        rec.method.push(methodRec);
+        covering = [];
+        methodTest = methodJoin;
+      }
+      //Add the current line to the lines this method covers
+      covering.push(parseInt(lineNumber, 10));
+      //Record the current coverage just in case we are at the last method
+      finalRec.cov = covering;
+      finalRec.methodName = methodJoin;
     }
     //Don't record the final one if there are no methods covered
     if (finalRec.methodName != "null"){
-        rec.method.push(finalRec);
+      rec.method.push(finalRec);
     }
       
     for (let line of rawLines[scriptName]) {
-        rec.covered.push(line);
+      rec.covered.push(line);
     }
     for (let line in uncoveredLines[scriptName]){
-        rec.uncovered.push(parseInt(line));
+      rec.uncovered.push(parseInt(line, 10));
     }
     result.push(rec);
   }
