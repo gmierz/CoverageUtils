@@ -242,8 +242,8 @@ CoverageCollector.prototype.recordTestCoverage = function (testName) {
     * everytime we find a new method name.
     */
     let finalRec = {
-        methodName: "null",
-        cov: []
+      methodName: "null",
+      cov: []
     };
     let covering = [];
     let methodTest = null;
