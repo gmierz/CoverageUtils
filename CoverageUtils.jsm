@@ -100,11 +100,20 @@ CoverageCollector.prototype._getUncoveredLines = function() {
   this._scripts.forEach(s => {
     let cov = s.getOffsetsCoverage();
     let scriptName = s.url;
-    if (!cov){
-      return;  
-    }
-    if (!currentUncovered[scriptName]){
+      
+    if(!currentUncovered[scriptName]){
       currentUncovered[scriptName] = new Set();
+    }
+    //Get the lines not covered within the script that does not have coverage
+    if (!cov){
+      cov = s.getAllColumnOffsets();
+      cov.forEach(notCovered => {
+        let {lineNumber, columnnumber, offset} = notCovered;
+        if(!currentUncovered[scriptName][lineNumber]){
+          currentUncovered[scriptName][lineNumber] = 0;
+        }
+      });
+      return;  
     }
     if (!this._allCoverage[scriptName]) {
       this._allCoverage[scriptName] = {};
@@ -113,12 +122,12 @@ CoverageCollector.prototype._getUncoveredLines = function() {
         tempCovered[scriptName] = new Set();
     }
       
+    //Get the lines not covered within a script which has coverage
     cov.forEach(covered => {
       let {lineNumber, columnnumber, offset, count} = covered; 
-      let key = [lineNumber, columnnumber, offset].join('#');
       if (!count){
         if (!currentUncovered[scriptName][lineNumber]){
-          //If we haven't covered this ine before
+          //If we haven't covered this line before
           if (!tempCovered[scriptName][lineNumber]){ 
             currentUncovered[scriptName][lineNumber] = count;
           }
@@ -160,7 +169,9 @@ CoverageCollector.prototype._getUncoveredLines = function() {
 * has each line number associated to a method. If the method is found to have
 * an undefined name, we give it a name "undefined_integer" and every time we find
 * a new undefined method, we increment the integer. There is the possibility that
-* multiple functions can be caught on the same line.
+* multiple functions can be caught on the same line. If a method has not been covered
+* at all, we use lineNumber == '-1' to designate that it will not have any lines covered.
+* This is needed to be able to have an empty covered array for the uncovered method.
 */
 CoverageCollector.prototype._getMethodNames = function() {
   let methodNames = {};
@@ -169,14 +180,19 @@ CoverageCollector.prototype._getMethodNames = function() {
     let method = s.displayName;
     let scriptName = s.url;
     let cov = s.getOffsetsCoverage();
-    if (!cov) {
-      return;
+    
+    if (!methodNames[scriptName]){
+      methodNames[scriptName] = new Set();
     }
     if (!method){
       method = "undefined_" + temp++; 
     }
-    if (!methodNames[scriptName]){
-      methodNames[scriptName] = new Set();
+    if (!cov) {
+      let key = [-1, method].join('#');
+      if(!methodNames[scriptName][key]){
+        methodNames[scriptName][key] = key;
+      }
+      return;
     }
 
     cov.forEach(covered => {
@@ -220,9 +236,11 @@ CoverageCollector.prototype.recordTestCoverage = function (testName) {
       uncovered: []
     };
     
-    //Get the last record in finalRec.
-    //This is needed because we push records into rec
-    //everytime we find a new method name.
+    /**
+    * Get the last record in finalRec.
+    * This is needed because we push records into rec
+    * everytime we find a new method name.
+    */
     let finalRec = {
         methodName: "null",
         cov: []
@@ -242,14 +260,31 @@ CoverageCollector.prototype.recordTestCoverage = function (testName) {
         covering = [];
         methodTest = methodJoin;
       }
-      //Add the current line to the lines this method covers
-      covering.push(parseInt(lineNumber, 10));
+        
+      /**
+      * Add the current line to the lines this method covers
+      * if the current method has lines covered, otherwise,
+      * push a new record with an empty covered array for the
+      * uncovered method.
+      */
+      if (parseInt(lineNumber, 10) !== -1){
+        covering.push(parseInt(lineNumber, 10));
+      }
+      else{
+        let methodRec = {methodName: methodTest, cov: [] };
+        rec.method.push(methodRec);
+        methodTest = null;
+      }
       //Record the current coverage just in case we are at the last method
       finalRec.cov = covering;
       finalRec.methodName = methodJoin;
     }
-    //Don't record the final one if there are no methods covered
-    if (finalRec.methodName != "null"){
+      
+    /**
+    * Don't record the final one if there are no methods covered or
+    * the method covered has no covered lines since it was already pushed.
+    */
+    if (finalRec.methodName != "null" && finalRec.cov.length != 0){
       rec.method.push(finalRec);
     }
       
