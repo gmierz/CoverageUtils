@@ -103,13 +103,13 @@ CoverageCollector.prototype._getUncoveredLines = function() {
     if (!cov){
       return;  
     }
-    if(!currentUncovered[scriptName]){
+    if (!currentUncovered[scriptName]){
       currentUncovered[scriptName] = new Set();
     }
     if (!this._allCoverage[scriptName]) {
       this._allCoverage[scriptName] = {};
     }
-    if(!tempCovered[scriptName]){
+    if (!tempCovered[scriptName]){
         tempCovered[scriptName] = new Set();
     }
       
@@ -117,23 +117,23 @@ CoverageCollector.prototype._getUncoveredLines = function() {
       let {lineNumber, columnnumber, offset, count} = covered; 
       let key = [lineNumber, columnnumber, offset].join('#');
       if (!count){
-        if(!currentUncovered[scriptName][lineNumber]){
+        if (!currentUncovered[scriptName][lineNumber]){
           //If we haven't covered this ine before
-          if(!tempCovered[scriptName][lineNumber]){ 
+          if (!tempCovered[scriptName][lineNumber]){ 
             currentUncovered[scriptName][lineNumber] = count;
           }
         }
       }
       else{
         //tempCovered is obtained here to determine if a line was covered in a previous run
-        if(!tempCovered[scriptName][lineNumber]){
+        if (!tempCovered[scriptName][lineNumber]){
           tempCovered[scriptName][lineNumber] = count;
         }
         else{
           tempCovered[scriptName][lineNumber] += count;
         }
         //If the current line is counted and in the currently uncovered lines
-        if(currentUncovered[scriptName][lineNumber] < currentUncovered[scriptName][lineNumber]+count){
+        if (currentUncovered[scriptName][lineNumber] < currentUncovered[scriptName][lineNumber]+count){
           currentUncovered[scriptName][lineNumber] += count;    
         }
       }
@@ -142,56 +142,61 @@ CoverageCollector.prototype._getUncoveredLines = function() {
   //Gather all lines uncovered based on whether they were counted or not.
   for (let scriptName in currentUncovered){
     for (let key in currentUncovered[scriptName]){
-      if(currentUncovered[scriptName][key] === 0){
-        if(!uncoveredLines[scriptName]){
+      if (currentUncovered[scriptName][key] === 0){
+        if (!uncoveredLines[scriptName]){
           uncoveredLines[scriptName] = new Set();
         }
-        if(!uncoveredLines[scriptName][key]){
+        if (!uncoveredLines[scriptName][key]){
           uncoveredLines[scriptName][key] = key;
         }
       }
     }                                             
   }
-    
   return uncoveredLines;
 }
 
+/**
+* Returns an array containing keys in the form "lineNumber#methodName" that
+* has each line number associated to a method. If the method is found to have
+* an undefined name, we give it a name "undefined_integer" and every time we find
+* a new undefined method, we increment the integer. There is the possibility that
+* multiple functions can be caught on the same line.
+*/
 CoverageCollector.prototype._getMethodNames = function() {
-    let methodNames = {};
-    let temp = 0;
-    this._scripts.forEach(s => {
-      let method = s.displayName;
-      let scriptName = s.url;
-      let cov = s.getOffsetsCoverage();
-      if (!cov) {
+  let methodNames = {};
+  let temp = 0;
+  this._scripts.forEach(s => {
+    let method = s.displayName;
+    let scriptName = s.url;
+    let cov = s.getOffsetsCoverage();
+    if (!cov) {
+      return;
+    }
+    if (!method){
+      method = "undefined_" + temp++; 
+    }
+    if (!methodNames[scriptName]){
+      methodNames[scriptName] = new Set();
+    }
+
+    cov.forEach(covered => {
+      //Record each line number that was covered
+      let {lineNumber, columnNumber, offset, count} = covered;
+      if (!count) {
         return;
       }
-      if (!method){
-        method = "undefined_" + temp++; 
-      }
-      if (!methodNames[scriptName]){
-        methodNames[scriptName] = new Set();
-      }
 
-      cov.forEach(covered => {
-        //Record each line number that was covered
-        let {lineNumber, columnNumber, offset, count} = covered;
-        if (!count) {
-          return;
-        }
-
-        if (!this._allCoverage[scriptName]) {
-          this._allCoverage[scriptName] = {};
-        }
-        //Join the method's name with the line number
-        let key = [lineNumber, method].join('#');
-        if (!methodNames[scriptName][key]) {
-          methodNames[scriptName][key] = key;
-        }
-      });
+      if (!this._allCoverage[scriptName]) {
+        this._allCoverage[scriptName] = {};
+      }
+      //Join the method's name with the line number
+      let key = [lineNumber, method].join('#');
+      if (!methodNames[scriptName][key]) {
+        methodNames[scriptName][key] = key;
+      }
     });
-    temp = 0;
-    return methodNames;
+  });
+  return methodNames;
 }
 
 /**
@@ -202,9 +207,10 @@ CoverageCollector.prototype._getMethodNames = function() {
 CoverageCollector.prototype.recordTestCoverage = function (testName) {
   dump("Collecting coverage for: " + testName + "\n");
   let rawLines = this._getLinesCovered(testName);
-  let result = [];
   let methods = this._getMethodNames(testName);
   let uncoveredLines = this._getUncoveredLines(testName);
+  let result = [];
+    
   for (let scriptName in rawLines) {
     let rec = {
       testUrl: testName,
